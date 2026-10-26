@@ -1,3 +1,3 @@
 you can running go compiler online using:
-https://onecompiler.com/go
-https://www.programiz.com/golang/online-compiler/
+1. https://onecompiler.com/go
+2. https://www.programiz.com/golang/online-compiler/
