@@ -1,3 +1,4 @@
+/* Solution 4: Monitor dengan Status (Gaya Tanenbaum) */
 package main
 
 import (
