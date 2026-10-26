@@ -1,5 +1,4 @@
 /* Solution 1: Batasi Maksimal 4 Filsuf di Meja */
-
 package main
 
 import (
