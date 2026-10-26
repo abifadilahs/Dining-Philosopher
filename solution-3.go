@@ -1,3 +1,4 @@
+/* Solution 3: Asimetris (Ganjjil/Genap)*/
 package main
 
 import (
