@@ -1,4 +1,4 @@
-/* Solution2: Hierarki Sumber Daya (Lock Ordering) */
+/* Solution 2: Hierarki Sumber Daya (Lock Ordering) */
 package main
 
 import (
