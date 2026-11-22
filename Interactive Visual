@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulasi Dining Philosophers Problem</title>
+
+  <!-- Memuat Google Fonts: Inter untuk tipografi modern dan mudah dibaca -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Memuat Tailwind CSS via CDN untuk tata letak responsif dan desain modern -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- Gaya CSS internal khusus untuk animasi visualisasi SVG dan scrollbar -->
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+
+    /* Animasi denyut merah saat terjadi Deadlock */
+    @keyframes deadlockPulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.85));
+        transform: scale(1);
+      }
+      50% {
+        filter: drop-shadow(0 0 18px rgba(239, 68, 68, 1));
+        transform: scale(1.06);
+      }
+    }
+
+    .deadlock-pulse {
+      animation: deadlockPulse 1.1s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    /* Animasi denyut lembut saat filsuf sedang makan */
+    @keyframes eatingGlow {
+      0%, 100% {
+        filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.45));
+      }
+      50% {
+        filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.85));
+      }
+    }
+
+    .eating-glow {
+      animation: eatingGlow 1.6s ease-in-out infinite;
+    }
+
+    /* Transisi halus saat sumpit bergeser menuju filsuf */
+    .chopstick-group {
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .chopstick-stick {
+      transition: stroke 0.25s ease, stroke-width 0.25s ease;
+    }
+
+    .philosopher-ring {
+      transition: stroke 0.3s ease, fill 0.3s ease;
+    }
+
+    /* Scrollbar rapi untuk panel Log Aktivitas */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0f172a;
+      border-radius: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-sky-500/30 selection:text-sky-200">
+  <!-- Kontainer Utama Halaman -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-8">
+
+    <!-- ==================== 1. HEADER ==================== -->
+    <header class="text-center max-w-3xl mx-auto space-y-3">
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs font-semibold tracking-wide uppercase">
+        <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+        Ilmu Komputer &bull; Sistem Operasi
+      </div>
+      <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white">
+        Simulasi <span class="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-emerald-400">Dining Philosophers</span> Problem
+      </h1>
+      <p class="text-slate-400 text-sm sm:text-base leading-relaxed">
+        Eksplorasi visual masalah klasik <strong class="text-slate-200">konkurensi</strong> dan <strong class="text-slate-200">deadlock</strong>:
+        bagaimana lima filsuf berbagi lima sumpit secara bersamaan tanpa saling mengunci atau kelaparan.
+      </p>
+    </header>
+
+    <!-- ==================== BANNER STATUS SISTEM ==================== -->
+    <div
+      id="statusBanner"
+      role="status"
+      aria-live="polite"
+      class="rounded-2xl border border-slate-800 bg-slate-900/80 px-5 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-300 shadow-lg"
+    >
+      <div class="flex items-center gap-3">
+        <span id="statusDot" class="w-3 h-3 rounded-full bg-sky-400 shrink-0"></span>
+        <div>
+          <p id="statusTitle" class="text-sm font-bold text-slate-100">Sistem Siap</p>
+          <p id="statusSubtitle" class="text-xs text-slate-400">
+            Tekan tombol <strong>Mulai</strong> untuk menjalankan simulasi atau <strong>Simulasikan Deadlock</strong> untuk melihat kebuntuan instan.
+          </p>
+        </div>
+      </div>
+      <!-- Indikator khusus Mode Pelayan (Arbitrator) -->
+      <div id="waiterBadge" class="hidden items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-500/15 border border-indigo-400/30 text-indigo-300 text-xs font-semibold shrink-0">
+        <span>Pelayan (Arbitrator):</span>
+        <span id="waiterCount" class="font-bold text-white">0 / 4</span>
+        <span>izin aktif</span>
+      </div>
+    </div>
+
+    <!-- ==================== AREA UTAMA: VISUALISASI + KONTROL ==================== -->
+    <main class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+      <!-- 2. AREA VISUALISASI MEJA BUNDAR INTERAKTIF (7 kolom di desktop) -->
+      <section class="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl flex flex-col items-center">
+        <div class="w-full flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+            <svg class="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9"></circle>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            Meja Bundar Interaktif
+          </h2>
+          <span id="activeModePill" class="text-xs font-medium px-3 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/25">
+            Mode: Naif (Rawan Deadlock)
+          </span>
+        </div>
+
+        <!-- Kanvas SVG Responsif (Skala sempurna di desktop & mobile) -->
+        <div class="w-full max-w-[540px] aspect-square relative">
+          <svg
+            id="diningSvg"
+            viewBox="0 0 600 600"
+            class="w-full h-full select-none overflow-visible"
+            aria-label="Visualisasi Meja Bundar Dining Philosophers"
+          >
+            <defs>
+              <!-- Gradasi permukaan meja kayu gelap modern -->
+              <radialGradient id="tableGradient" cx="50%" cy="45%" r="55%">
+                <stop offset="0%" stop-color="#334155" />
+                <stop offset="70%" stop-color="#1e293b" />
+                <stop offset="100%" stop-color="#0f172a" />
+              </radialGradient>
+              <!-- Gradasi mangkuk makanan -->
+              <radialGradient id="bowlGradient" cx="40%" cy="35%" r="65%">
+                <stop offset="0%" stop-color="#f8fafc" />
+                <stop offset="100%" stop-color="#cbd5e1" />
+              </radialGradient>
+              <!-- Bayangan lembut meja -->
+              <filter id="tableShadow" x="-15%" y="-15%" width="130%" height="130%">
+                <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#020617" flood-opacity="0.7" />
+              </filter>
+            </defs>
+
+            <!-- Lingkaran Dekoratif Latar Belakang -->
+            <circle cx="300" cy="300" r="245" fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="6 6" />
+
+            <!-- Meja Bundar Utama -->
+            <circle
+              cx="300"
+              cy="300"
+              r="142"
+              fill="url(#tableGradient)"
+              stroke="#475569"
+              stroke-width="4"
+              filter="url(#tableShadow)"
+            />
+            <!-- Aksen Cincin Tengah Meja -->
+            <circle cx="300" cy="300" r="46" fill="#0f172a" stroke="#334155" stroke-width="2" />
+            <text x="300" y="296" text-anchor="middle" fill="#94a3b8" font-size="11" font-weight="700" letter-spacing="1">MEJA</text>
+            <text x="300" y="312" text-anchor="middle" fill="#64748b" font-size="10" font-weight="600">5 SUMPIT</text>
+
+            <!-- Layer SVG yang diisi secara dinamis oleh JavaScript -->
+            <g id="bowlsLayer"></g>
+            <g id="chopsticksLayer"></g>
+            <g id="philosophersLayer"></g>
+          </svg>
+        </div>
+
+        <!-- Legenda Status Warna -->
+        <div class="w-full mt-4 pt-4 border-t border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+          <div class="flex items-center gap-2 bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800/80">
+            <span class="w-3 h-3 rounded-full bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.7)]"></span>
+            <span class="text-slate-300 font-medium">Berpikir</span>
+          </div>
+          <div class="flex items-center gap-2 bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800/80">
+            <span class="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)]"></span>
+            <span class="text-slate-300 font-medium">Lapar</span>
+          </div>
+          <div class="flex items-center gap-2 bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800/80">
+            <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]"></span>
+            <span class="text-slate-300 font-medium">Makan</span>
+          </div>
+          <div class="flex items-center gap-2 bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800/80">
+            <span class="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse"></span>
+            <span class="text-slate-300 font-medium">Deadlock</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3 & 4. PANEL KONTROL INTERAKTIF + LOG AKTIVITAS (5 kolom di desktop) -->
+      <aside class="lg:col-span-5 space-y-6">
+
+        <!-- Panel Kontrol -->
+        <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-5">
+          <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+            Panel Kontrol Simulasi
+          </h2>
+
+          <!-- Pilihan Mode Algoritma -->
+          <div class="space-y-2.5">
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Pilih Mode Algoritma
+            </label>
+            <div class="space-y-2" id="modeSelector">
+              <!-- Mode 1: Naif -->
+              <label class="mode-option flex items-start gap-3 p-3 rounded-2xl border border-sky-500/60 bg-sky-500/10 cursor-pointer transition hover:bg-slate-800/80">
+                <input type="radio" name="algorithmMode" value="naive" checked class="mt-1 accent-sky-400 w-4 h-4 shrink-0" />
+                <div>
+                  <div class="text-sm font-semibold text-white flex items-center gap-2">
+                    Mode Naif
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">Rawan Deadlock</span>
+                  </div>
+                  <p class="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    Semua filsuf mengambil sumpit kiri terlebih dahulu, lalu mencoba mengambil sumpit kanan.
+                  </p>
+                </div>
+              </label>
+
+              <!-- Mode 2: Hierarki Sumber Daya -->
+              <label class="mode-option flex items-start gap-3 p-3 rounded-2xl border border-slate-800 bg-slate-950/60 cursor-pointer transition hover:bg-slate-800/80">
+                <input type="radio" name="algorithmMode" value="hierarchy" class="mt-1 accent-emerald-400 w-4 h-4 shrink-0" />
+                <div>
+                  <div class="text-sm font-semibold text-white flex items-center gap-2">
+                    Solusi Hierarki Sumber Daya
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Bebas Deadlock</span>
+                  </div>
+                  <p class="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    Setiap filsuf wajib mengambil sumpit bernomor lebih kecil terlebih dahulu, sehingga siklus tunggu terputus.
+                  </p>
+                </div>
+              </label>
+
+              <!-- Mode 3: Pelayan (Arbitrator) -->
+              <label class="mode-option flex items-start gap-3 p-3 rounded-2xl border border-slate-800 bg-slate-950/60 cursor-pointer transition hover:bg-slate-800/80">
+                <input type="radio" name="algorithmMode" value="arbitrator" class="mt-1 accent-indigo-400 w-4 h-4 shrink-0" />
+                <div>
+                  <div class="text-sm font-semibold text-white flex items-center gap-2">
+                    Solusi Pelayan (Arbitrator)
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Bebas Deadlock</span>
+                  </div>
+                  <p class="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                    Pelayan membatasi maksimal hanya 4 filsuf yang boleh mengambil sumpit bersamaan, menjamin minimal 1 filsuf bisa makan.
+                  </p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Tombol Aksi Utama -->
+          <div class="grid grid-cols-2 gap-3 pt-1">
+            <button
+              id="btnPlayPause"
+              type="button"
+              class="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 active:scale-[0.98] text-slate-950 font-bold text-sm transition shadow-lg shadow-sky-500/20"
+            >
+              <svg id="iconPlay" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              <svg id="iconPause" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+              <span id="btnPlayPauseText">Mulai</span>
+            </button>
+
+            <button
+              id="btnReset"
+              type="button"
+              class="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-slate-200 font-semibold text-sm border border-slate-700 transition"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Reset
+            </button>
+          </div>
+
+          <!-- Tombol Simulasikan Deadlock Instan -->
+          <button
+            id="btnSimulateDeadlock"
+            type="button"
+            class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-red-500/15 hover:bg-red-500/25 active:scale-[0.99] text-red-300 font-bold text-sm border border-red-500/40 transition"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            Simulasikan Deadlock Instan
+          </button>
+
+          <!-- Slider Kecepatan Simulasi -->
+          <div class="space-y-2 pt-1">
+            <div class="flex items-center justify-between text-xs">
+              <label for="speedSlider" class="font-semibold text-slate-300">Kecepatan Simulasi</label>
+              <span id="speedLabel" class="font-bold text-sky-400">Normal (1.0x)</span>
+            </div>
+            <input
+              id="speedSlider"
+              type="range"
+              min="1"
+              max="5"
+              step="1"
+              value="3"
+              class="w-full accent-sky-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
+            />
+            <div class="flex justify-between text-[11px] text-slate-500 font-medium">
+              <span>Lambat</span>
+              <span>Sedang</span>
+              <span>Cepat</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. LOG AKTIVITAS REAL-TIME -->
+        <section class="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Log Aktivitas Real-time
+            </h2>
+            <button
+              id="btnClearLog"
+              type="button"
+              class="text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-800 transition"
+            >
+              Bersihkan
+            </button>
+          </div>
+
+          <div
+            id="activityLog"
+            class="custom-scrollbar h-60 overflow-y-auto rounded-2xl bg-slate-950/90 border border-slate-800/90 p-3.5 space-y-2 text-xs font-mono"
+          >
+            <!-- Entri log ditambahkan secara dinamis oleh JavaScript -->
+          </div>
+        </section>
+
+      </aside>
+    </main>
+
+    <!-- ==================== 5. BAGIAN PENJELASAN EDUKATIF ==================== -->
+    <section class="pt-4 space-y-5">
+      <div class="text-center max-w-2xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-white">Memahami Konsep di Balik Simulasi</h2>
+        <p class="text-sm text-slate-400 mt-1.5">
+          Ringkasan singkat mengenai masalah konkurensi klasik yang diperkenalkan oleh Edsger Dijkstra (1965).
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <!-- Kartu 1 -->
+        <article class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-3 hover:border-sky-500/40 transition">
+          <div class="w-11 h-11 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 font-bold text-lg">
+            01
+          </div>
+          <h3 class="text-lg font-bold text-white">Apa itu Dining Philosophers?</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Lima filsuf duduk mengelilingi meja bundar. Aktivitas mereka hanya dua: <strong class="text-slate-200">berpikir</strong> dan <strong class="text-slate-200">makan</strong>.
+            Di antara setiap pasangan filsuf terdapat satu sumpit (total 5 sumpit). Untuk bisa makan, seorang filsuf membutuhkan <strong class="text-slate-200">dua sumpit</strong> (kiri dan kanan) secara bersamaan.
+            Dalam ilmu komputer, filsuf merepresentasikan <em>proses/thread</em> dan sumpit adalah <em>sumber daya bersama (shared resources)</em>.
+          </p>
+        </article>
+
+        <!-- Kartu 2 -->
+        <article class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-3 hover:border-red-500/40 transition">
+          <div class="w-11 h-11 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 font-bold text-lg">
+            02
+          </div>
+          <h3 class="text-lg font-bold text-white">Mengapa Deadlock Terjadi?</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Pada <strong class="text-slate-200">Mode Naif</strong>, jika kelima filsuf merasa lapar di waktu yang sama dan masing-masing mengambil sumpit kirinya,
+            maka tidak ada sumpit yang tersisa di meja. Setiap filsuf akan memegang 1 sumpit sambil terus menunggu sumpit kanannya dilepaskan oleh tetangganya.
+            Terjadilah <strong class="text-red-300">Circular Wait</strong> (tunggu melingkar) yang membuat seluruh sistem macet selamanya.
+          </p>
+        </article>
+
+        <!-- Kartu 3 -->
+        <article class="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-3 hover:border-emerald-500/40 transition">
+          <div class="w-11 h-11 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-lg">
+            03
+          </div>
+          <h3 class="text-lg font-bold text-white">Bagaimana Cara Mencegahnya?</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Deadlock dicegah dengan memutus syarat tunggu melingkar:
+            <br />&bull; <strong class="text-emerald-300">Hierarki Sumber Daya:</strong> Mengurutkan sumpit (#0&ndash;#4) dan mewajibkan pengambilan dari nomor terkecil dahulu.
+            <br />&bull; <strong class="text-indigo-300">Pelayan (Arbitrator):</strong> Membatasi maksimal 4 filsuf yang boleh mengambil sumpit bersamaan sehingga selalu ada minimal 1 filsuf yang mendapat sepasang sumpit.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Footer Sederhana -->
+    <footer class="text-center pt-6 pb-2 border-t border-slate-900 text-xs text-slate-500">
+      Simulasi Edukatif Masalah Filsuf Makan (Dining Philosophers Problem) &bull; Konkurensi &amp; Sistem Operasi
+    </footer>
+  </div>
+
+  <!-- ==================== LOGIKA SIMULASI JAVASCRIPT ==================== -->
+  <script>
+    /**
+     * ============================================================================
+     * SIMULASI DINING PHILOSOPHERS PROBLEM
+     * ----------------------------------------------------------------------------
+     * Struktur kode dibagi menjadi 4 bagian utama agar mudah dipahami:
+     * 1. Konfigurasi & State Global
+     * 2. Perhitungan Geometri & Rendering SVG Meja Bundar
+     * 3. Mesin Simulasi (Naive, Hierarki Sumber Daya, Arbitrator & Deteksi Deadlock)
+     * 4. Kontrol UI, Event Listener & Log Aktivitas
+     * ============================================================================
+     */
+
+    // --------------------------------------------------------------------------
+    // 1. KONFIGURASI & STATE GLOBAL
+    // --------------------------------------------------------------------------
+
+    const PHILOSOPHER_NAMES = ['Socrates', 'Plato', 'Aristoteles', 'Descartes', 'Kant'];
+    const PHILOSOPHER_INITIALS = ['So', 'Pl', 'Ar', 'De', 'Ka'];
+
+    // Pemetaan warna dan label untuk setiap status filsuf
+    const STATE_META = {
+      THINKING: {
+        label: 'Berpikir',
+        stroke: '#0ea5e9', // Sky 500 (Biru)
+        fill: '#0c4a6e',
+        badgeBg: '#0284c7',
+        text: '#e0f2fe',
+      },
+      HUNGRY: {
+        label: 'Lapar',
+        stroke: '#f59e0b', // Amber 500 (Kuning/Oranye)
+        fill: '#78350f',
+        badgeBg: '#d97706',
+        text: '#fef3c7',
+      },
+      EATING: {
+        label: 'Makan',
+        stroke: '#10b981', // Emerald 500 (Hijau)
+        fill: '#064e3b',
+        badgeBg: '#059669',
+        text: '#d1fae5',
+      },
+      DEADLOCK: {
+        label: 'Deadlock!',
+        stroke: '#ef4444', // Red 500 (Merah)
+        fill: '#7f1d1d',
+        badgeBg: '#dc2626',
+        text: '#fee2e2',
+      },
+    };
+
+    // Pemetaan kecepatan slider (1 = Lambat, 5 = Cepat) ke milidetik per langkah (tick)
+    const SPEED_CONFIG = {
+      1: { ms: 1500, label: 'Sangat Lambat (0.5x)' },
+      2: { ms: 1050, label: 'Lambat (0.75x)' },
+      3: { ms: 700, label: 'Normal (1.0x)' },
+      4: { ms: 420, label: 'Cepat (1.5x)' },
+      5: { ms: 220, label: 'Sangat Cepat (2.5x)' },
+    };
+
+    // State utama aplikasi
+    let philosophers = [];
+    let chopsticks = [];
+    let currentMode = 'naive'; // 'naive' | 'hierarchy' | 'arbitrator'
+    let isRunning = false;
+    let isDeadlocked = false;
+    let tickIntervalId = null;
+    let deadlockTimeoutId = null;
+    let tickDelayMs = SPEED_CONFIG[3].ms;
+
+    // Konstanta geometri untuk SVG 600x600
+    const CENTER_X = 300;
+    const CENTER_Y = 300;
+    const PHILOSOPHER_RADIUS = 220;
+    const BOWL_RADIUS = 102;
+    const CHOPSTICK_INNER_R = 64;
+    const CHOPSTICK_OUTER_R = 122;
+
+    // Referensi elemen DOM
+    const bowlsLayer = document.getElementById('bowlsLayer');
+    const chopsticksLayer = document.getElementById('chopsticksLayer');
+    const philosophersLayer = document.getElementById('philosophersLayer');
+    const activityLogEl = document.getElementById('activityLog');
+    const btnPlayPause = document.getElementById('btnPlayPause');
+    const btnPlayPauseText = document.getElementById('btnPlayPauseText');
+    const iconPlay = document.getElementById('iconPlay');
+    const iconPause = document.getElementById('iconPause');
+    const btnReset = document.getElementById('btnReset');
+    const btnSimulateDeadlock = document.getElementById('btnSimulateDeadlock');
+    const btnClearLog = document.getElementById('btnClearLog');
+    const speedSlider = document.getElementById('speedSlider');
+    const speedLabel = document.getElementById('speedLabel');
+    const statusBanner = document.getElementById('statusBanner');
+    const statusDot = document.getElementById('statusDot');
+    const statusTitle = document.getElementById('statusTitle');
+    const statusSubtitle = document.getElementById('statusSubtitle');
+    const waiterBadge = document.getElementById('waiterBadge');
+    const waiterCountEl = document.getElementById('waiterCount');
+    const activeModePill = document.getElementById('activeModePill');
+
+    // Helper: menghasilkan angka bulat acak inklusif antara min dan max
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    // Helper: mengembalikan indeks sumpit kiri dan kanan dari filsuf ke-i
+    // (Sumpit #i terletak di sebelah kiri filsuf #i jika menghadap pusat meja)
+    function getLeftChopstickId(philId) {
+      return philId;
+    }
+
+    function getRightChopstickId(philId) {
+      return (philId + 4) % 5;
+    }
+
+    // Helper: mengembalikan koordinat (x, y) berdasarkan sudut derajat dan radius
+    function polarToCartesian(angleDeg, radius) {
+      const rad = (angleDeg * Math.PI) / 180;
+      return {
+        x: CENTER_X + radius * Math.cos(rad),
+        y: CENTER_Y + radius * Math.sin(rad),
+      };
+    }
+
+    // --------------------------------------------------------------------------
+    // 2. INISIALISASI STATE & RENDERING SVG MEJA BUNDAR
+    // --------------------------------------------------------------------------
+
+    /**
+     * Menginisialisasi ulang seluruh data filsuf dan sumpit ke kondisi awal.
+     */
+    function initState() {
+      philosophers = PHILOSOPHER_NAMES.map((name, i) => {
+        const angleDeg = -90 + i * 72; // 5 filsuf tersebar merata setiap 72 derajat
+        const pos = polarToCartesian(angleDeg, PHILOSOPHER_RADIUS);
+        const bowlPos = polarToCartesian(angleDeg, BOWL_RADIUS);
+        return {
+          id: i,
+          name,
+          initials: PHILOSOPHER_INITIALS[i],
+          angleDeg,
+          x: pos.x,
+          y: pos.y,
+          bowlX: bowlPos.x,
+          bowlY: bowlPos.y,
+          state: 'THINKING',
+          heldChopsticks: [],
+          eatCount: 0,
+          timer: randomInt(2, 5), // Waktu awal berpikir sebelum lapar
+          hasWaiterPermission: false,
+        };
+      });
+
+      chopsticks = Array.from({ length: 5 }, (_, i) => {
+        // Sumpit #i diletakkan tepat di antara Filsuf #i dan Filsuf #(i+1)%5
+        const angleDeg = -90 + i * 72 + 36;
+        const inner = polarToCartesian(angleDeg, CHOPSTICK_INNER_R);
+        const outer = polarToCartesian(angleDeg, CHOPSTICK_OUTER_R);
+        const mid = polarToCartesian(angleDeg, (CHOPSTICK_INNER_R + CHOPSTICK_OUTER_R) / 2);
+        return {
+          id: i,
+          angleDeg,
+          inner,
+          outer,
+          mid,
+          owner: null, // null berarti tersedia di meja
+        };
+      });
+
+      isDeadlocked = false;
+    }
+
+    /**
+     * Membuat elemen-elemen SVG awal (mangkuk, sumpit, dan filsuf) sekali saja,
+     * lalu fungsi updateVisuals() akan memperbarui atributnya secara efisien.
+     */
+    function buildSvgElements() {
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+      bowlsLayer.innerHTML = '';
+      chopsticksLayer.innerHTML = '';
+      philosophersLayer.innerHTML = '';
+
+      // 1) Gambar 5 Mangkuk Makanan di depan tiap filsuf
+      philosophers.forEach((p) => {
+        const g = document.createElementNS(SVG_NS, 'g');
+        g.setAttribute('id', `bowl-${p.id}`);
+
+        // Piring/Mangkuk luar
+        const outerBowl = document.createElementNS(SVG_NS, 'circle');
+        outerBowl.setAttribute('cx', p.bowlX);
+        outerBowl.setAttribute('cy', p.bowlY);
+        outerBowl.setAttribute('r', '21');
+        outerBowl.setAttribute('fill', 'url(#bowlGradient)');
+        outerBowl.setAttribute('stroke', '#64748b');
+        outerBowl.setAttribute('stroke-width', '2');
+
+        // Isi makanan (mi/nasi) di dalam mangkuk
+        const food = document.createElementNS(SVG_NS, 'circle');
+        food.setAttribute('cx', p.bowlX);
+        food.setAttribute('cy', p.bowlY);
+        food.setAttribute('r', '14');
+        food.setAttribute('fill', '#fde68a');
+        food.setAttribute('stroke', '#f59e0b');
+        food.setAttribute('stroke-width', '1.5');
+        food.setAttribute('stroke-dasharray', '4 2');
+
+        // Hiasan kecil di tengah makanan
+        const garnish = document.createElementNS(SVG_NS, 'circle');
+        garnish.setAttribute('cx', p.bowlX);
+        garnish.setAttribute('cy', p.bowlY);
+        garnish.setAttribute('r', '4');
+        garnish.setAttribute('fill', '#10b981');
+
+        g.appendChild(outerBowl);
+        g.appendChild(food);
+        g.appendChild(garnish);
+        bowlsLayer.appendChild(g);
+      });
+
+      // 2) Gambar 5 Sumpit (#0 sampai #4) di antara para filsuf
+      chopsticks.forEach((c) => {
+        const g = document.createElementNS(SVG_NS, 'g');
+        g.setAttribute('id', `chopstick-group-${c.id}`);
+        g.setAttribute('class', 'chopstick-group');
+
+        // Batang sumpit
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('id', `chopstick-line-${c.id}`);
+        line.setAttribute('class', 'chopstick-stick');
+        line.setAttribute('x1', c.inner.x);
+        line.setAttribute('y1', c.inner.y);
+        line.setAttribute('x2', c.outer.x);
+        line.setAttribute('y2', c.outer.y);
+        line.setAttribute('stroke', '#94a3b8');
+        line.setAttribute('stroke-width', '5');
+        line.setAttribute('stroke-linecap', 'round');
+
+        // Latar nomor sumpit
+        const labelBg = document.createElementNS(SVG_NS, 'circle');
+        labelBg.setAttribute('id', `chopstick-badge-${c.id}`);
+        labelBg.setAttribute('cx', c.mid.x);
+        labelBg.setAttribute('cy', c.mid.y);
+        labelBg.setAttribute('r', '11');
+        labelBg.setAttribute('fill', '#0f172a');
+        labelBg.setAttribute('stroke', '#475569');
+        labelBg.setAttribute('stroke-width', '1.5');
+
+        // Teks nomor sumpit (#0 - #4)
+        const labelText = document.createElementNS(SVG_NS, 'text');
+        labelText.setAttribute('id', `chopstick-text-${c.id}`);
+        labelText.setAttribute('x', c.mid.x);
+        labelText.setAttribute('y', c.mid.y + 3.5);
+        labelText.setAttribute('text-anchor', 'middle');
+        labelText.setAttribute('fill', '#e2e8f0');
+        labelText.setAttribute('font-size', '9.5');
+        labelText.setAttribute('font-weight', '700');
+        labelText.textContent = `#${c.id}`;
+
+        g.appendChild(line);
+        g.appendChild(labelBg);
+        g.appendChild(labelText);
+        chopsticksLayer.appendChild(g);
+      });
+
+      // 3) Gambar 5 Filsuf beserta label nama, status, dan counter makan
+      philosophers.forEach((p) => {
+        const g = document.createElementNS(SVG_NS, 'g');
+        g.setAttribute('id', `phil-group-${p.id}`);
+
+        // Lingkaran utama avatar filsuf
+        const circle = document.createElementNS(SVG_NS, 'circle');
+        circle.setAttribute('id', `phil-circle-${p.id}`);
+        circle.setAttribute('class', 'philosopher-ring');
+        circle.setAttribute('cx', p.x);
+        circle.setAttribute('cy', p.y);
+        circle.setAttribute('r', '34');
+        circle.setAttribute('fill', STATE_META.THINKING.fill);
+        circle.setAttribute('stroke', STATE_META.THINKING.stroke);
+        circle.setAttribute('stroke-width', '4');
+
+        // Inisial nama di dalam lingkaran
+        const initials = document.createElementNS(SVG_NS, 'text');
+        initials.setAttribute('x', p.x);
+        initials.setAttribute('y', p.y - 2);
+        initials.setAttribute('text-anchor', 'middle');
+        initials.setAttribute('fill', '#ffffff');
+        initials.setAttribute('font-size', '15');
+        initials.setAttribute('font-weight', '800');
+        initials.textContent = p.initials;
+
+        // Teks status singkat di dalam lingkaran bawah
+        const statusText = document.createElementNS(SVG_NS, 'text');
+        statusText.setAttribute('id', `phil-status-${p.id}`);
+        statusText.setAttribute('x', p.x);
+        statusText.setAttribute('y', p.y + 15);
+        statusText.setAttribute('text-anchor', 'middle');
+        statusText.setAttribute('fill', '#bae6fd');
+        statusText.setAttribute('font-size', '9.5');
+        statusText.setAttribute('font-weight', '600');
+        statusText.textContent = 'Berpikir';
+
+        // Latar kartu nama + counter makan di bawah avatar filsuf
+        const infoCard = document.createElementNS(SVG_NS, 'rect');
+        infoCard.setAttribute('x', p.x - 50);
+        infoCard.setAttribute('y', p.y + 39);
+        infoCard.setAttribute('width', '100');
+        infoCard.setAttribute('height', '34');
+        infoCard.setAttribute('rx', '9');
+        infoCard.setAttribute('fill', '#0f172a');
+        infoCard.setAttribute('fill-opacity', '0.92');
+        infoCard.setAttribute('stroke', '#334155');
+        infoCard.setAttribute('stroke-width', '1.2');
+
+        // Nama lengkap filsuf
+        const nameText = document.createElementNS(SVG_NS, 'text');
+        nameText.setAttribute('x', p.x);
+        nameText.setAttribute('y', p.y + 53);
+        nameText.setAttribute('text-anchor', 'middle');
+        nameText.setAttribute('fill', '#f8fafc');
+        nameText.setAttribute('font-size', '11');
+        nameText.setAttribute('font-weight', '700');
+        nameText.textContent = p.name;
+
+        // Counter jumlah makan
+        const eatCountText = document.createElementNS(SVG_NS, 'text');
+        eatCountText.setAttribute('id', `phil-eat-${p.id}`);
+        eatCountText.setAttribute('x', p.x);
+        eatCountText.setAttribute('y', p.y + 67);
+        eatCountText.setAttribute('text-anchor', 'middle');
+        eatCountText.setAttribute('fill', '#94a3b8');
+        eatCountText.setAttribute('font-size', '9.5');
+        eatCountText.setAttribute('font-weight', '600');
+        eatCountText.textContent = 'Makan: 0 kali';
+
+        g.appendChild(circle);
+        g.appendChild(initials);
+        g.appendChild(statusText);
+        g.appendChild(infoCard);
+        g.appendChild(nameText);
+        g.appendChild(eatCountText);
+        philosophersLayer.appendChild(g);
+      });
+    }
+
+    /**
+     * Memperbarui seluruh visualisasi SVG dan indikator UI berdasarkan state terbaru.
+     */
+    function updateVisuals() {
+      // 1) Perbarui visual setiap filsuf
+      philosophers.forEach((p) => {
+        const meta = STATE_META[p.state];
+        const group = document.getElementById(`phil-group-${p.id}`);
+        const circle = document.getElementById(`phil-circle-${p.id}`);
+        const statusText = document.getElementById(`phil-status-${p.id}`);
+        const eatText = document.getElementById(`phil-eat-${p.id}`);
+
+        circle.setAttribute('fill', meta.fill);
+        circle.setAttribute('stroke', meta.stroke);
+        statusText.setAttribute('fill', meta.text);
+        statusText.textContent = meta.label;
+        eatText.textContent = `Makan: ${p.eatCount} kali`;
+
+        // Atur efek animasi sesuai status
+        group.classList.remove('deadlock-pulse', 'eating-glow');
+        if (p.state === 'DEADLOCK') {
+          group.classList.add('deadlock-pulse');
+        } else if (p.state === 'EATING') {
+          group.classList.add('eating-glow');
+        }
+      });
+
+      // 2) Perbarui visual & pergeseran posisi setiap sumpit
+      chopsticks.forEach((c) => {
+        const group = document.getElementById(`chopstick-group-${c.id}`);
+        const line = document.getElementById(`chopstick-line-${c.id}`);
+        const badge = document.getElementById(`chopstick-badge-${c.id}`);
+
+        if (c.owner === null) {
+          // Sumpit bebas: kembali ke posisi semula di meja
+          group.style.transform = 'translate(0px, 0px)';
+          line.setAttribute('stroke', '#94a3b8');
+          line.setAttribute('stroke-width', '5');
+          badge.setAttribute('stroke', '#475569');
+          badge.setAttribute('fill', '#0f172a');
+        } else {
+          // Sumpit sedang dipegang oleh filsuf: geser ke arah filsuf tersebut
+          const ownerPhil = philosophers[c.owner];
+          const ownerMeta = STATE_META[ownerPhil.state];
+
+          // Hitung vektor pergeseran 34% menuju posisi filsuf yang memegang sumpit
+          const dx = (ownerPhil.x - c.mid.x) * 0.34;
+          const dy = (ownerPhil.y - c.mid.y) * 0.34;
+
+          group.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+          line.setAttribute('stroke', ownerMeta.stroke);
+          line.setAttribute('stroke-width', '6.5');
+          badge.setAttribute('stroke', ownerMeta.stroke);
+          badge.setAttribute('fill', ownerMeta.fill);
+        }
+      });
+
+      // 3) Perbarui indikator Pelayan (Arbitrator) jika mode tersebut aktif
+      if (currentMode === 'arbitrator') {
+        const activeWaiters = philosophers.filter((p) => p.hasWaiterPermission).length;
+        waiterBadge.classList.remove('hidden');
+        waiterBadge.classList.add('flex');
+        waiterCountEl.textContent = `${activeWaiters} / 4`;
+      } else {
+        waiterBadge.classList.add('hidden');
+        waiterBadge.classList.remove('flex');
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 3. MESIN SIMULASI & ALGORITMA KONKURENSI
+    // --------------------------------------------------------------------------
+
+    /**
+     * Menentukan urutan sumpit yang harus diambil oleh filsuf berdasarkan mode algoritma.
+     */
+    function getChopstickOrder(philId) {
+      const left = getLeftChopstickId(philId);
+      const right = getRightChopstickId(philId);
+
+      if (currentMode === 'hierarchy') {
+        // Solusi Hierarki Sumber Daya: selalu ambil nomor sumpit yang lebih kecil dulu
+        return left < right ? [left, right] : [right, left];
+      }
+
+      // Mode Naif & Mode Pelayan: ambil sumpit kiri dulu, lalu kanan
+      return [left, right];
+    }
+
+    /**
+     * Memeriksa apakah sistem mengalami Deadlock:
+     * Semua 5 filsuf dalam keadaan LAPAR, masing-masing memegang tepat 1 sumpit,
+     * dan tidak ada satu pun sumpit bebas yang tersisa di meja.
+     */
+    function checkDeadlock() {
+      const allHungryWithOneStick = philosophers.every(
+        (p) => p.state === 'HUNGRY' && p.heldChopsticks.length === 1
+      );
+      const noFreeChopsticks = chopsticks.every((c) => c.owner !== null);
+
+      if (allHungryWithOneStick && noFreeChopsticks) {
+        triggerDeadlockState();
+        return true;
+      }
+      return false;
+    }
+
+    /**
+     * Mengubah seluruh sistem ke status DEADLOCK dan menghentikan loop simulasi.
+     */
+    function triggerDeadlockState() {
+      isDeadlocked = true;
+      stopSimulationLoop();
+
+      philosophers.forEach((p) => {
+        p.state = 'DEADLOCK';
+      });
+
+      updateVisuals();
+      setStatusBanner(
+        'deadlock',
+        'DEADLOCK TERDETEKSI!',
+        'Kelima filsuf masing-masing memegang 1 sumpit dan saling menunggu tanpa henti. Klik Reset atau ganti algoritma.'
+      );
+      addLog(
+        'DEADLOCK TERDETEKSI! Semua filsuf memegang sumpit kiri dan saling menunggu sumpit kanan. Sistem macet total!',
+        'deadlock'
+      );
+    }
+
+    /**
+     * Menjalankan 1 langkah (tick) simulasi untuk seluruh filsuf.
+     */
+    function simulationTick() {
+      if (isDeadlocked) return;
+
+      // Acak urutan pemrosesan filsuf di setiap tick agar adil (tidak bias indeks)
+      const order = [0, 1, 2, 3, 4].sort(() => Math.random() - 0.5);
+
+      for (const id of order) {
+        const p = philosophers[id];
+
+        // --- KONDISI 1: SEDANG BERPIKIR ---
+        if (p.state === 'THINKING') {
+          p.timer -= 1;
+          if (p.timer <= 0) {
+            p.state = 'HUNGRY';
+            addLog(`${p.name} selesai berpikir dan mulai merasa lapar.`, 'hungry');
+          }
+          continue;
+        }
+
+        // --- KONDISI 2: SEDANG LAPAR (MENCOBA MENGAMBIL SUMPIT) ---
+        if (p.state === 'HUNGRY') {
+          // Khusus Mode Pelayan (Arbitrator): cek izin pelayan (maksimal 4 filsuf)
+          if (currentMode === 'arbitrator' && !p.hasWaiterPermission) {
+            const grantedCount = philosophers.filter((x) => x.hasWaiterPermission).length;
+            if (grantedCount < 4) {
+              p.hasWaiterPermission = true;
+              addLog(`Pelayan memberi izin kepada ${p.name} (${grantedCount + 1}/4 aktif).`, 'info');
+            } else {
+              // Menunggu giliran dari pelayan tanpa mengambil sumpit apa pun
+              continue;
+            }
+          }
+
+          const [firstStickId, secondStickId] = getChopstickOrder(p.id);
+
+          // Belum memegang sumpit -> coba ambil sumpit pertama
+          if (p.heldChopsticks.length === 0) {
+            if (chopsticks[firstStickId].owner === null) {
+              chopsticks[firstStickId].owner = p.id;
+              p.heldChopsticks.push(firstStickId);
+              addLog(`${p.name} mengambil sumpit #${firstStickId}.`, 'pickup');
+            }
+          }
+          // Sudah memegang 1 sumpit -> coba ambil sumpit kedua
+          else if (p.heldChopsticks.length === 1) {
+            if (chopsticks[secondStickId].owner === null) {
+              chopsticks[secondStickId].owner = p.id;
+              p.heldChopsticks.push(secondStickId);
+              p.state = 'EATING';
+              p.eatCount += 1;
+              p.timer = randomInt(3, 5); // Durasi makan
+              addLog(
+                `${p.name} mengambil sumpit #${secondStickId} dan mulai makan! (Makan ke-${p.eatCount})`,
+                'eating'
+              );
+            }
+          }
+          continue;
+        }
+
+        // --- KONDISI 3: SEDANG MAKAN ---
+        if (p.state === 'EATING') {
+          p.timer -= 1;
+          if (p.timer <= 0) {
+            const releasedIds = [...p.heldChopsticks];
+            releasedIds.forEach((stickId) => {
+              chopsticks[stickId].owner = null;
+            });
+            p.heldChopsticks = [];
+
+            // Kembalikan izin pelayan jika menggunakan Mode Arbitrator
+            if (p.hasWaiterPermission) {
+              p.hasWaiterPermission = false;
+            }
+
+            p.state = 'THINKING';
+            p.timer = randomInt(3, 6); // Durasi berpikir kembali
+            addLog(
+              `${p.name} selesai makan, meletakkan sumpit #${releasedIds[0]} & #${releasedIds[1]}, lalu berpikir.`,
+              'thinking'
+            );
+          }
+        }
+      }
+
+      // Perbarui tampilan visual setelah semua filsuf diproses
+      updateVisuals();
+
+      // Cek apakah terjadi Deadlock
+      checkDeadlock();
+    }
+
+    /**
+     * Mendemonstrasikan Deadlock secara instan:
+     * Mengalihkan ke Mode Naif, membuat semua filsuf lapar bersamaan, lalu mengambil sumpit kiri.
+     */
+    function simulateInstantDeadlock() {
+      stopSimulationLoop();
+      clearTimeout(deadlockTimeoutId);
+
+      // Pastikan radio button berpindah ke Mode Naif
+      currentMode = 'naive';
+      const naiveRadio = document.querySelector('input[name="algorithmMode"][value="naive"]');
+      if (naiveRadio) naiveRadio.checked = true;
+      updateModeSelectorUI();
+
+      // Reset ke keadaan bersih
+      initState();
+      updateVisuals();
+
+      addLog('--- Memulai demonstrasi Deadlock instan (Mode Naif) ---', 'info');
+
+      // Langkah 1: Semua filsuf merasa lapar secara bersamaan
+      philosophers.forEach((p) => {
+        p.state = 'HUNGRY';
+      });
+      updateVisuals();
+      setStatusBanner(
+        'running',
+        'Mensimulasikan Deadlock...',
+        'Kelima filsuf merasa lapar di saat yang bersamaan dan bersiap mengambil sumpit kiri.'
+      );
+      addLog('Kelima filsuf merasa lapar pada saat yang bersamaan!', 'hungry');
+
+      // Langkah 2 (setelah jeda singkat agar animasi terlihat jelas): Semua mengambil sumpit kiri
+      deadlockTimeoutId = setTimeout(() => {
+        philosophers.forEach((p) => {
+          const leftId = getLeftChopstickId(p.id);
+          chopsticks[leftId].owner = p.id;
+          p.heldChopsticks = [leftId];
+        });
+        updateVisuals();
+        addLog('Semua filsuf serentak mengambil sumpit kirinya (#0, #1, #2, #3, #4).', 'pickup');
+
+        // Langkah 3: Picu status Deadlock
+        deadlockTimeoutId = setTimeout(() => {
+          checkDeadlock();
+        }, 450);
+      }, 500);
+    }
+
+    // --------------------------------------------------------------------------
+    // 4. KONTROL UI, BANNER STATUS & LOG AKTIVITAS
+    // --------------------------------------------------------------------------
+
+    function startSimulationLoop() {
+      if (isDeadlocked) {
+        // Jika sedang deadlock dan user menekan Mulai, reset otomatis terlebih dahulu
+        resetSimulation(false);
+      }
+      if (isRunning) return;
+
+      isRunning = true;
+      tickIntervalId = setInterval(simulationTick, tickDelayMs);
+      updatePlayPauseButton();
+      setStatusBanner(
+        'running',
+        'Simulasi Berjalan (Normal)',
+        `Algoritma aktif: ${getModeDisplayName(currentMode)}. Amati pergerakan sumpit dan status tiap filsuf.`
+      );
+      addLog(`Simulasi dijalankan (${getModeDisplayName(currentMode)}).`, 'info');
+    }
+
+    function stopSimulationLoop() {
+      isRunning = false;
+      if (tickIntervalId !== null) {
+        clearInterval(tickIntervalId);
+        tickIntervalId = null;
+      }
+      updatePlayPauseButton();
+    }
+
+    function pauseSimulation() {
+      stopSimulationLoop();
+      if (!isDeadlocked) {
+        setStatusBanner(
+          'idle',
+          'Simulasi Dijeda',
+          'Tekan tombol Mulai untuk melanjutkan simulasi dari posisi terakhir.'
+        );
+        addLog('Simulasi dijeda oleh pengguna.', 'info');
+      }
+    }
+
+    function resetSimulation(logMessage = true) {
+      stopSimulationLoop();
+      clearTimeout(deadlockTimeoutId);
+      initState();
+      updateVisuals();
+      setStatusBanner(
+        'idle',
+        'Sistem Siap',
+        'Seluruh filsuf kembali berpikir dan semua sumpit tersedia di meja.'
+      );
+      if (logMessage) {
+        addLog('Simulasi direset ke kondisi awal.', 'info');
+      }
+    }
+
+    function updatePlayPauseButton() {
+      if (isRunning) {
+        btnPlayPauseText.textContent = 'Jeda';
+        iconPlay.classList.add('hidden');
+        iconPause.classList.remove('hidden');
+        btnPlayPause.classList.remove('bg-sky-500', 'hover:bg-sky-400');
+        btnPlayPause.classList.add('bg-amber-400', 'hover:bg-amber-300');
+      } else {
+        btnPlayPauseText.textContent = 'Mulai';
+        iconPlay.classList.remove('hidden');
+        iconPause.classList.add('hidden');
+        btnPlayPause.classList.remove('bg-amber-400', 'hover:bg-amber-300');
+        btnPlayPause.classList.add('bg-sky-500', 'hover:bg-sky-400');
+      }
+    }
+
+    function getModeDisplayName(mode) {
+      if (mode === 'naive') return 'Mode Naif (Rawan Deadlock)';
+      if (mode === 'hierarchy') return 'Hierarki Sumber Daya';
+      return 'Solusi Pelayan (Arbitrator)';
+    }
+
+    function updateModeSelectorUI() {
+      const labels = document.querySelectorAll('.mode-option');
+      labels.forEach((label) => {
+        const radio = label.querySelector('input[type="radio"]');
+        if (radio.checked) {
+          label.classList.remove('border-slate-800', 'bg-slate-950/60');
+          label.classList.add('border-sky-500/60', 'bg-sky-500/10');
+        } else {
+          label.classList.remove('border-sky-500/60', 'bg-sky-500/10');
+          label.classList.add('border-slate-800', 'bg-slate-950/60');
+        }
+      });
+
+      // Perbarui pil mode aktif di atas meja
+      activeModePill.textContent = `Mode: ${getModeDisplayName(currentMode)}`;
+      if (currentMode === 'naive') {
+        activeModePill.className =
+          'text-xs font-medium px-3 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/25';
+      } else {
+        activeModePill.className =
+          'text-xs font-medium px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25';
+      }
+    }
+
+    /**
+     * Memperbarui banner status di bagian atas halaman.
+     */
+    function setStatusBanner(type, title, subtitle) {
+      statusTitle.textContent = title;
+      statusSubtitle.textContent = subtitle;
+
+      statusBanner.className =
+        'rounded-2xl border px-5 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-300 shadow-lg ';
+
+      if (type === 'deadlock') {
+        statusBanner.className += 'border-red-500/70 bg-red-950/70 animate-pulse';
+        statusDot.className = 'w-3 h-3 rounded-full bg-red-500 shrink-0 shadow-[0_0_10px_#ef4444]';
+        statusTitle.className = 'text-sm font-extrabold text-red-300 tracking-wide';
+        statusSubtitle.className = 'text-xs text-red-200/90';
+      } else if (type === 'running') {
+        statusBanner.className += 'border-emerald-500/40 bg-emerald-950/30';
+        statusDot.className = 'w-3 h-3 rounded-full bg-emerald-400 shrink-0 animate-pulse';
+        statusTitle.className = 'text-sm font-bold text-emerald-300';
+        statusSubtitle.className = 'text-xs text-slate-300';
+      } else {
+        statusBanner.className += 'border-slate-800 bg-slate-900/80';
+        statusDot.className = 'w-3 h-3 rounded-full bg-sky-400 shrink-0';
+        statusTitle.className = 'text-sm font-bold text-slate-100';
+        statusSubtitle.className = 'text-xs text-slate-400';
+      }
+    }
+
+    /**
+     * Menambahkan entri baru ke panel Log Aktivitas Real-time dengan timestamp singkat.
+     */
+    function addLog(message, category = 'info') {
+      const now = new Date();
+      const timeStr = now.toTimeString().slice(0, 8); // Format JJ:MM:DD
+
+      const colorMap = {
+        thinking: 'text-sky-300',
+        hungry: 'text-amber-300',
+        pickup: 'text-slate-300',
+        eating: 'text-emerald-300 font-semibold',
+        deadlock: 'text-red-300 font-bold bg-red-950/60 border border-red-500/30 px-2 py-1.5 rounded-lg',
+        info: 'text-slate-400',
+      };
+
+      const entry = document.createElement('div');
+      entry.className = `leading-relaxed ${colorMap[category] || 'text-slate-300'}`;
+      entry.innerHTML = `<span class="text-slate-500 mr-1.5">[${timeStr}]</span>${message}`;
+
+      activityLogEl.appendChild(entry);
+
+      // Batasi jumlah maksimal baris log agar performa browser tetap ringan
+      while (activityLogEl.children.length > 100) {
+        activityLogEl.removeChild(activityLogEl.firstChild);
+      }
+
+      // Gulir otomatis ke pesan terbaru
+      activityLogEl.scrollTop = activityLogEl.scrollHeight;
+    }
+
+    // --------------------------------------------------------------------------
+    // EVENT LISTENERS
+    // --------------------------------------------------------------------------
+
+    btnPlayPause.addEventListener('click', () => {
+      if (isRunning) {
+        pauseSimulation();
+      } else {
+        startSimulationLoop();
+      }
+    });
+
+    btnReset.addEventListener('click', () => {
+      resetSimulation(true);
+    });
+
+    btnSimulateDeadlock.addEventListener('click', () => {
+      simulateInstantDeadlock();
+    });
+
+    btnClearLog.addEventListener('click', () => {
+      activityLogEl.innerHTML = '';
+      addLog('Log aktivitas dibersihkan.', 'info');
+    });
+
+    // Pergantian Mode Algoritma
+    document.querySelectorAll('input[name="algorithmMode"]').forEach((radio) => {
+      radio.addEventListener('change', (e) => {
+        currentMode = e.target.value;
+        updateModeSelectorUI();
+        resetSimulation(false);
+        addLog(`Mode algoritma diubah ke: ${getModeDisplayName(currentMode)}.`, 'info');
+      });
+    });
+
+    // Pengaturan Kecepatan Simulasi via Slider
+    speedSlider.addEventListener('input', (e) => {
+      const level = Number(e.target.value);
+      const cfg = SPEED_CONFIG[level];
+      tickDelayMs = cfg.ms;
+      speedLabel.textContent = cfg.label;
+
+      // Jika simulasi sedang berjalan, perbarui interval kecepatan secara langsung
+      if (isRunning) {
+        clearInterval(tickIntervalId);
+        tickIntervalId = setInterval(simulationTick, tickDelayMs);
+      }
+    });
+
+    // --------------------------------------------------------------------------
+    // INISIALISASI AWAL SAAT HALAMAN DIMUAT
+    // --------------------------------------------------------------------------
+    window.addEventListener('DOMContentLoaded', () => {
+      initState();
+      buildSvgElements();
+      updateVisuals();
+      updateModeSelectorUI();
+      addLog('Selamat datang! Pilih mode algoritma lalu tekan "Mulai" untuk mengamati simulasi.', 'info');
+    });
+  </script>
+</body>
+</html>
