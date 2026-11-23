@@ -8,3 +8,6 @@ for html preview:
 learning:
 1. https://dsa-verse.vercel.app/
 2. https://diningphilosophers.eu/?selected=2
+
+melihat process/thread pada laptop atau pc:
+1. https://learn.microsoft.com/en-us/sysinternals/downloads/process-explorer
