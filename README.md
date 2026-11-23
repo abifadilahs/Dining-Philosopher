@@ -7,3 +7,4 @@ for html preview:
 
 learning:
 1. https://dsa-verse.vercel.app/
+2. https://diningphilosophers.eu/?selected=2
